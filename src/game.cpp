@@ -1,16 +1,25 @@
 #include "game.h"
 #include <iostream>
 #include "SDL.h"
+#include <future>
+#include <thread>
+#include <mutex>
+
+Game::~Game() {
+  thrd_coming_events.join();
+  thrd_process_events.join();
+}
 
 Game::Game(std::size_t grid_width, std::size_t grid_height)
     : snake(grid_width, grid_height),
-      engine(dev()),
-      random_w(0, static_cast<int>(grid_width)),
-      random_h(0, static_cast<int>(grid_height)) {
-  PlaceFood();
+      food(std::make_shared<Food>(grid_width, grid_height)) {
+      
+  ftr = std::async(std::launch::async, &Food::Place, food, std::move(TargetType::GOOD), nullptr);
+  
+  // food.Place(TargetType::GOOD, nullptr);
 }
 
-void Game::Run(Controller const &controller, Renderer &renderer,
+void Game::Run(Controller &controller, Renderer &renderer,
                std::size_t target_frame_duration) {
   Uint32 title_timestamp = SDL_GetTicks();
   Uint32 frame_start;
@@ -19,11 +28,12 @@ void Game::Run(Controller const &controller, Renderer &renderer,
   int frame_count = 0;
   bool running = true;
 
+  thrd_coming_events = std::thread(&Controller::HandleEvents, &controller);
+  thrd_process_events = std::thread(&Controller::ProcessEventQueue, &controller, &running, &snake);
+
   while (running) {
     frame_start = SDL_GetTicks();
-
-    // Input, Update, Render - the main game loop.
-    controller.HandleInput(running, snake);
+    // controller.HandleInput(running, snake);
     Update();
     renderer.Render(snake, food);
 
@@ -50,21 +60,6 @@ void Game::Run(Controller const &controller, Renderer &renderer,
   }
 }
 
-void Game::PlaceFood() {
-  int x, y;
-  while (true) {
-    x = random_w(engine);
-    y = random_h(engine);
-    // Check that the location is not occupied by a snake item before placing
-    // food.
-    if (!snake.SnakeCell(x, y)) {
-      food.x = x;
-      food.y = y;
-      return;
-    }
-  }
-}
-
 void Game::Update() {
   if (!snake.alive) return;
 
@@ -74,9 +69,9 @@ void Game::Update() {
   int new_y = static_cast<int>(snake.head_y);
 
   // Check if there's food over here
-  if (food.x == new_x && food.y == new_y) {
+  if (food->IsLocatedAt(new_x, new_y)) {
     score++;
-    PlaceFood();
+    food->Place(TargetType::GOOD, &snake);
     // Grow snake and increase speed.
     snake.GrowBody();
     snake.speed += 0.02;

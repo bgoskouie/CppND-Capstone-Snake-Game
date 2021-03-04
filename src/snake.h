@@ -17,7 +17,7 @@ class Snake {
   void Update();
 
   void GrowBody();
-  bool SnakeCell(int x, int y);
+  bool SnakeCell(int x, int y) const;
 
   Direction direction = Direction::kUp;
 
